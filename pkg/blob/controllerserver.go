@@ -341,6 +341,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 	}
 
+	csiMC := csiMetrics.NewCSIMetricContext(requestName)
+	isOperationSucceeded := false
+	defer func() {
+		csiMC.ObserveWithLabels(isOperationSucceeded,
+			"storage_account_type", storageAccountType,
+			"protocol", protocol)
+	}()
+
 	accountOptions := &storage.AccountOptions{
 		Name:                            account,
 		Type:                            storageAccountType,
@@ -395,12 +403,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	defer d.volumeLocks.Release(volName)
 
 	var volumeID string
-	csiMC := csiMetrics.NewCSIMetricContext(requestName)
-	isOperationSucceeded := false
+	mc := metrics.NewMetricContext(blobCSIDriverName, requestName, d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
 	defer func() {
-		csiMC.ObserveWithLabels(isOperationSucceeded,
-			"storage_account_type", storageAccountType,
-			"protocol", protocol)
+		mc.ObserveOperationWithResult(isOperationSucceeded, VolumeID, volumeID)
 	}()
 
 	var accountKey string
@@ -532,6 +537,13 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 // DeleteVolume delete a volume
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	requestName := "controller_delete_volume"
+	csiMC := csiMetrics.NewCSIMetricContext(requestName)
+	isOperationSucceeded := false
+	defer func() {
+		csiMC.Observe(isOperationSucceeded)
+	}()
+
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -564,10 +576,9 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		}
 	}
 
-	csiMC := csiMetrics.NewCSIMetricContext("controller_delete_volume")
-	isOperationSucceeded := false
+	mc := metrics.NewMetricContext(blobCSIDriverName, requestName, d.cloud.ResourceGroup, d.cloud.SubscriptionID, d.Name)
 	defer func() {
-		csiMC.Observe(isOperationSucceeded)
+		mc.ObserveOperationWithResult(isOperationSucceeded, VolumeID, volumeID)
 	}()
 
 	if resourceGroupName == "" {
